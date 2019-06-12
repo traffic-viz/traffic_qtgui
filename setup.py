@@ -20,6 +20,7 @@ setup(
     author="Xavier Olive",
     author_email="git@xoolive.org",
     url="https://github.com/xoolive/traffic/",
+    version="1.0",
     license="MIT",
     description="A plugin for a traffic Qt GUI",
     long_description=long_description,
