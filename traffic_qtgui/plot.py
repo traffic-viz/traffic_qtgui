@@ -1,5 +1,3 @@
-# fmt: off
-
 import logging
 import sys
 from collections import defaultdict
@@ -7,18 +5,18 @@ from threading import Lock
 from typing import Dict, List, Union
 
 import matplotlib.pyplot as plt
+from cartes.crs import *  # noqa: F401, F403
 from cartopy.crs import PlateCarree, Projection
 from matplotlib.artist import Artist
-from matplotlib.backends.backend_qt5agg import (FigureCanvasQTAgg,
-                                                NavigationToolbar2QT)
+from matplotlib.backends.backend_qt5agg import (
+    FigureCanvasQTAgg,
+    NavigationToolbar2QT,
+)
 from matplotlib.figure import Figure
 from PyQt5.QtWidgets import QSizePolicy
-
 from traffic.core import Traffic
 from traffic.drawing import *  # noqa: F401, F403, type: ignore
-from traffic.drawing import countries, rivers
-
-# fmt: on
+from traffic.drawing import countries
 
 
 class NavigationToolbar(NavigationToolbar2QT):
@@ -192,13 +190,13 @@ class MapCanvas(FigureCanvasQTAgg):
                     else "110m"
                 )
             )
-            if projection_name in ["Lambert93", "GaussKruger", "Amersfoort"]:
-                # Hardcoded projection list?! :o/
-                self.ax.add_feature(rivers())
+            # if projection_name in ["Lambert93", "GaussKruger", "Amersfoort"]:
+            #     # Hardcoded projection list?! :o/
+            #     self.ax.add_feature(rivers())
 
             self.fig.set_tight_layout(True)
-            self.ax.background_patch.set_visible(False)
-            self.ax.outline_patch.set_visible(False)
+            self.ax.spines["geo"].set_visible(False)
+            self.ax.patch.set_visible(False)
             self.ax.format_coord = lambda x, y: ""
             self.ax.set_global()
 
@@ -226,7 +224,7 @@ class MapCanvas(FigureCanvasQTAgg):
                         and f_at.latitude == f_at.latitude
                     ):
                         self.trajectories[c] += f_at.plot(
-                            self.ax, s=8, text_kw=dict(s=c)
+                            self.ax, s=100, text_kw=dict(s=c)
                         )
                 except AttributeError:
                     # 'DataFrame' object has no attribute 'longitude'
@@ -263,9 +261,9 @@ class MapCanvas(FigureCanvasQTAgg):
 
         def params(at):
             if len(cur_flights) < 10:
-                return dict(s=8, text_kw=dict(s=at.callsign))
+                return dict(s=100, text_kw=dict(s=at.callsign))
             else:
-                return dict(s=8, text_kw=dict(s=""))
+                return dict(s=100, text_kw=dict(s=""))
 
         for at in cur_flights:
             if at is not None:

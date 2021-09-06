@@ -1,5 +1,3 @@
-# fmt: off
-
 import logging
 import os
 import re
@@ -7,27 +5,39 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Optional, Set, cast
 
-from PyQt5 import QtCore, QtGui
-from PyQt5.QtWidgets import (QApplication, QComboBox, QFileDialog, QGridLayout,
-                             QHBoxLayout, QInputDialog, QLabel, QLineEdit,
-                             QListWidget, QMainWindow, QMessageBox,
-                             QPushButton, QSlider, QTabWidget, QVBoxLayout,
-                             QWidget)
-
-import pandas as pd
-import traffic
+from cartes.crs import *  # noqa: F401, F403
+from cartes.osm.nominatim import Nominatim
 from cartopy.crs import PlateCarree
+from PyQt5 import QtCore, QtGui
+from PyQt5.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+    QBoxLayout,
+    QComboBox,
+    QFileDialog,
+    QGridLayout,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QSlider,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 from traffic import config
 from traffic.core import Flight, Traffic
 from traffic.data import ModeS_Decoder, aixm_airspaces
-from traffic.drawing import location
-from typing import Optional, Set, cast
+
+import pandas as pd
 
 from .plot import MapCanvas, NavigationToolbar2QT, TimeCanvas
-
-
-# fmt: on
 
 
 def dont_crash(fn):
@@ -54,45 +64,43 @@ class UpdateTraffic(QtCore.QThread):
 
     def __init__(self, parent: "MainScreen", refresh_time: int) -> None:
         super().__init__()
-        self.parent = parent
+        self.parentElt = parent
         self.refresh_time = refresh_time
 
     def run(self):
         while True:
-            delta = datetime.now() - self.parent.last_interact
+            delta = datetime.now() - self.parentElt.last_interact
             # do not overreact, stay minimalist!!
             if delta.total_seconds() > self.refresh_time:
-                self.parent._tview = self.parent.traffic
-                if self.parent._tview is not None:
-                    self.parent.map_plot.default_plot(self.parent._tview)
-                    self.parent.map_plot.draw()
+                self.parentElt._tview = self.parentElt.traffic
+                if self.parentElt._tview is not None:
+                    self.parentElt.map_plot.default_plot(self.parentElt._tview)
+                    self.parentElt.map_plot.draw()
             time.sleep(1)
 
     def __del__(self):
-        self.thread.quit()
-        while self.thread.isRunning():
+        self.thread().quit()
+        while self.thread().isRunning():
             time.sleep(1)
 
 
 class AirspaceInitCache(QtCore.QThread):
-    """Initialize cache in background to avoid lag.
-    """
+    """Initialize cache in background to avoid lag."""
 
     def __init__(self, parent):
         super().__init__()
-        self.parent = parent
+        self.parentElt = parent
 
     def run(self):
         try:
             aixm_airspaces.init_cache()
-            self.parent.airspace_ready = True
+            self.parentElt.airspace_ready = True
         except Exception:
             pass
 
 
 class MainScreen(QMainWindow):
-    """The Main GUI layout and callbacks.
-    """
+    """The Main GUI layout and callbacks."""
 
     def __init__(self) -> None:
 
@@ -137,7 +145,7 @@ class MainScreen(QMainWindow):
         #            self.on_filter(max_alt, max_time)
         return self._traffic
 
-    def set_callbacks(self) -> None:
+    def set_callbacks(self):
         self.airport_button.clicked.connect(self.on_plot_airport)
         self.altitude_slider.sliderMoved.connect(self.on_altitude_moved)
         self.altitude_slider.sliderReleased.connect(self.on_select)
@@ -199,13 +207,17 @@ class MainScreen(QMainWindow):
         map_toolbar.pan()
 
         time_tab = QWidget()
-        time_layout = QVBoxLayout()
+        time_layout: QBoxLayout = QVBoxLayout()
         time_tab.setLayout(time_layout)
 
         self.y_selector = QListWidget()
         self.sec_y_selector = QListWidget()
-        self.y_selector.setSelectionMode(3)  # extended selection
-        self.sec_y_selector.setSelectionMode(3)  # extended selection
+        self.y_selector.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
+        self.sec_y_selector.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
         selector = QHBoxLayout()
         selector.addWidget(self.y_selector)
         selector.addWidget(self.sec_y_selector)
@@ -221,7 +233,7 @@ class MainScreen(QMainWindow):
 
         self.interact_column = QVBoxLayout()
 
-        self.open_options = ["Open file", "dump1090"]
+        self.open_options = ["Open file", "RTL-SDR", "dump1090"]
         if "decoders" in config:
             self.open_options += list(config["decoders"])
         self.open_dropdown = QComboBox()
@@ -233,8 +245,11 @@ class MainScreen(QMainWindow):
         self.projection_dropdown = QComboBox()
         more_projs = config.get("projections", "extra", fallback="")
         if more_projs != "":
-            proj_list = more_projs.split(";")
-            self.projections += list(x.strip() for x in proj_list)
+            proj_list = more_projs.split("\n")
+            for x in proj_list:
+                clean = x.replace("-", "").strip()
+                if clean != "":
+                    self.projections.append(clean)
         for proj in self.projections:
             self.projection_dropdown.addItem(proj)
         self.interact_column.addWidget(self.projection_dropdown)
@@ -262,7 +277,7 @@ class MainScreen(QMainWindow):
         self.area_select = QListWidget()
         self.interact_column.addWidget(self.area_select)
 
-        self.time_slider = QSlider(QtCore.Qt.Horizontal)
+        self.time_slider = QSlider(QtCore.Qt.Horizontal)  # type: ignore
         self.time_description = QLabel("Date max.")
         self.time_slider_info = QLabel()
         time_layout = QHBoxLayout()
@@ -275,7 +290,7 @@ class MainScreen(QMainWindow):
         self.time_slider.setEnabled(False)
         self.interact_column.addLayout(time_layout)
 
-        self.altitude_slider = QSlider(QtCore.Qt.Horizontal)
+        self.altitude_slider = QSlider(QtCore.Qt.Horizontal)  # type: ignore
         self.altitude_description = QLabel("Altitude max.")
         self.altitude_slider_info = QLabel("60000")
         self.altitude_slider.setSingleStep(5)
@@ -298,10 +313,13 @@ class MainScreen(QMainWindow):
         self.interact_column.addLayout(identifier_layout)
 
         self.identifier_select = QListWidget()
-        self.identifier_select.setSelectionMode(3)  # extended selection
+        self.identifier_select.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
         self.interact_column.addWidget(self.identifier_select)
 
         mainLayout = QGridLayout()
+
         mainLayout.addLayout(plot_column, 0, 0)
         mainLayout.addLayout(self.interact_column, 0, 1)
 
@@ -376,7 +394,9 @@ class MainScreen(QMainWindow):
             if len(self.area_input.text()) == 0:
                 self.map_plot.ax.set_global()
             else:
-                self.map_plot.ax.set_extent(location(self.area_input.text()))
+                self.map_plot.ax.set_extent(
+                    Nominatim.search(self.area_input.text())
+                )
         else:
             if self.airspace_ready:
                 self.map_plot.ax.set_extent(
@@ -439,12 +459,16 @@ class MainScreen(QMainWindow):
             if len(self.area_input.text()) == 0:
                 self.map_plot.default_plot(self._tview)
             else:
-                location(self.area_input.text()).plot(
-                    self.map_plot.ax,
-                    color="#524c50",
-                    linestyle="dotted",
-                    linewidth=0.5,
-                )
+                place = Nominatim.search(self.area_input.text())
+                if place is not None:
+                    self.map_plot.ax.add_geometries(
+                        [place.shape],
+                        crs=PlateCarree(),
+                        facecolor="none",
+                        edgecolor="#524c50",
+                        linestyle="dotted",
+                        linewidth=0.5,
+                    )
         else:
             if self.airspace_ready:
                 selected = self.area_select.selectedItems()
@@ -480,17 +504,7 @@ class MainScreen(QMainWindow):
     def on_plot_airport(self, *args, **kwargs) -> None:
         self.last_interact = datetime.now()
         if len(self.area_input.text()) == 0:
-            from cartotools.osm import request, tags
-
-            west, east, south, north = self.map_plot.ax.get_extent(
-                crs=PlateCarree()
-            )
-            if abs(east - west) > 1 or abs(north - south) > 1:
-                # that would be a too big request
-                return
-            request((west, south, east, north), **tags.airport).plot(
-                self.map_plot.ax
-            )
+            return
         else:
             from traffic.data import airports
 
@@ -525,6 +539,8 @@ class MainScreen(QMainWindow):
         if index == 0:
             self.openFile()
         elif index == 1:
+            self.openRtlSdr()
+        elif index == 2:
             self.openDump1090()
         else:
             address = config.get("decoders", self.open_options[index])
@@ -544,7 +560,7 @@ class MainScreen(QMainWindow):
     def set_icons(self) -> None:
 
         logging.info("Setting options")
-        icon_path = Path(traffic.__file__).absolute().parent.parent / "icons"
+        icon_path = Path(__file__).absolute().parent / "icons"
         if sys.platform == "linux":
             icon_full = QtGui.QIcon((icon_path / "travel-beige.svg").as_posix())
         elif sys.platform == "darwin":
@@ -587,6 +603,20 @@ class MainScreen(QMainWindow):
                     self.y_selector.addItem(column)
                     self.sec_y_selector.addItem(column)
 
+    def openRtlSdr(self) -> None:
+        reference, ok = QInputDialog.getText(
+            self, "RTL-SDR reference", "Reference airport:"
+        )
+
+        if ok:
+            self.open_dropdown.setItemText(1, f"RTL-SDR ({reference})")
+            self.decoder = ModeS_Decoder.from_rtlsdr(reference)
+            refresh_time = config.getint(
+                "decoders", "refresh_time", fallback=30
+            )
+            self.updateTraffic = UpdateTraffic(self, refresh_time)
+            self.updateTraffic.start()
+
     def openDump1090(self) -> None:
         reference, ok = QInputDialog.getText(
             self, "dump1090 reference", "Reference airport:"
@@ -610,20 +640,21 @@ class MainScreen(QMainWindow):
                 "CSV files (*.csv);;"
                 "Sqlite3 files (*.db)"
             ),
-            #             "filter": "Data files (*.csv *.pkl)",
             "directory": os.path.expanduser("~"),
         }
 
-        self.filename = QFileDialog.getOpenFileName(self, **options)[0]
+        self.filename = QFileDialog.getOpenFileName(
+            self, **options  # type: ignore
+        )[0]
         if self.filename == "":
             return
-        self.filename = Path(self.filename)
-        self._traffic = Traffic.from_file(self.filename)
+        self.filepath = Path(self.filename)
+        self._traffic = Traffic.from_file(self.filepath)
 
         assert self._traffic is not None
         self._tview = self._traffic.sort_values("timestamp")
         assert self._tview is not None
-        self.open_dropdown.setItemText(0, self.filename.name)
+        self.open_dropdown.setItemText(0, self.filepath.name)
         self.map_plot.default_plot(self._tview)
 
         self.identifier_select.clear()
